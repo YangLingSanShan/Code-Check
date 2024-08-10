@@ -1,0 +1,32 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Profile</title>
+    {% load static %}
+    <link rel="stylesheet" href="{% static 'css/style.css' %}">
+</head>
+<body>
+    <h1>{{ user.username }}'s Profile</h1>
+    
+    <div>
+        <h2>Current Avatar</h2>
+        {% if user_profile.avatar %}
+            <img src="{{ user_profile.avatar.url }}" alt="Avatar" width="200">
+        {% else %}
+            <p>No avatar available.</p>
+        {% endif %}
+    </div>
+
+    <div>
+        <h2>Change Avatar</h2>
+        <form method="POST" enctype="multipart/form-data">
+            {% csrf_token %}
+            <label for="avatar">Upload new avatar:</label>
+            <input type="file" name="avatar" id="avatar">
+            <button type="submit">Upload</button>
+        </form>
+    </div>
+</body>
+</html>

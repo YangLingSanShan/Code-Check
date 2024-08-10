@@ -1,0 +1,440 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+    <meta charset="UTF-8">
+    <title>分组检测</title>
+    <script type="importmap">
+        {
+            "imports": {
+                "vue": "https://unpkg.com/vue@3.4.29/dist/vue.esm-browser.js",
+                "axios": "https://cdn.jsdelivr.net/npm/axios@1.1.2/dist/axios.min.js"
+            }
+        }
+    </script>
+    <link href="https://cdn.bootcdn.net/ajax/libs/twitter-bootstrap/5.2.3/css/bootstrap.min.css" rel="stylesheet">
+    <script src="https://cdn.bootcdn.net/ajax/libs/twitter-bootstrap/5.2.3/js/bootstrap.bundle.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/jquery@3.6.3/dist/jquery.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/axios/dist/axios.min.js"></script>
+    <script src="../static/js/echarts.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/FileSaver.js/2.0.5/FileSaver.min.js"></script>
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/prism/1.25.0/themes/prism-okaidia.min.css" rel="stylesheet">
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.25.0/prism.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.25.0/components/prism-python.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.25.0/components/prism-javascript.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.25.0/components/prism-markup.min.js"></script>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css">
+    <style>
+        #chart-container {
+            width: 100%;
+            height: 600px;
+            overflow-y: auto;
+            border: 1px solid #ddd;
+        }
+        .echarts-container {
+            height: 100%;
+        }
+        .modal-backdrop {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background-color: rgba(0, 0, 0, 0.5);
+            z-index: 1040;
+        }
+        .modal-dialog {
+            max-width: 90%;
+            max-height: 90%;
+        }
+        .modal-content {
+            border-radius: 0.5rem;
+        }
+    </style>
+</head>
+<body>
+<div id="app" class="container-fluid"></div>
+
+<script type="module">
+    import { createApp } from 'vue';
+    import sideBar from "../static/js/sideBar.js";
+
+    const highlightDirective = {
+        mounted(el) {
+            Prism.highlightElement(el);
+        },
+        updated(el) {
+            Prism.highlightElement(el);
+        }
+    };
+
+    const app = createApp({
+        components: {
+            sideBar
+        },
+        directives: {
+            highlight: highlightDirective
+        },
+        data() {
+            return {
+                now: "分组检测",
+                results: [],
+                graphData: [],
+                matrix:[],
+                uploadedFiles: [],
+                showModal: false,
+                modalSourceCode: '',
+                modalTargetCode: '',
+                showChart: false,
+                checkOption: 'normal',
+                submittedValue: 'Threshold: 80%',
+                threshold: 0.8
+            };
+        },
+        methods: {
+            handleFileChange(event) {
+                const files = event.target.files;
+                if (files && files.length > 0) {
+                    this.showChart = false; // 上传文件时先隐藏图表
+                    const formData = new FormData();
+                    for (let i = 0; i < files.length; i++) {
+                        formData.append('files', files[i]);
+                    }
+                    formData.append('comparison_type', 'group');
+                    formData.append('check_option', this.checkOption); // 使用当前的 checkOption
+                    formData.append('threshold', this.threshold);
+                    axios.post('/api/comparison/', formData)
+                        .then(response => {
+                            this.results = response.data.groups;
+                            this.matrix = response.data.matrix;
+                            this.graphData = this.generateGraphData();
+                            this.uploadedFiles = Array.from(files);
+                            this.checkForPlagiarism(); // Check for plagiarism after updating results
+                        })
+                        .catch(error => {
+                            console.error('Error uploading files:', error);
+                        });
+                }
+            },
+            resendFilesAndUpdateResults() {
+                if (this.uploadedFiles.length > 0) {
+                    const formData = new FormData();
+                    this.uploadedFiles.forEach(file => {
+                        formData.append('files', file);
+                    });
+                    formData.append('comparison_type', 'group');
+                    formData.append('check_option', this.checkOption); // 使用当前的 checkOption
+                    formData.append('threshold', this.threshold);
+                    axios.post('/api/comparison/', formData)
+                        .then(response => {
+                            // 更新结果数据
+                            this.results = response.data.groups;
+                            this.matrix = response.data.matrix;
+                            this.graphData = this.generateGraphData();
+                            this.checkForPlagiarism(); // Check for plagiarism after updating results
+                        })
+                        .catch(error => {
+                            console.error('Error uploading files:', error);
+                        });
+                }
+            },
+
+            checkForPlagiarism() {
+                if (this.results.length === 0) {
+                    // 清除图表内容
+                    const chartContainer = document.getElementById('chart1');
+                    if (chartContainer) {
+                        var myChart = echarts.getInstanceByDom(chartContainer);
+                        if (myChart) {
+                            myChart.clear(); // 清除图表内容
+                        }
+                    }
+
+                    const modalElement = document.getElementById('noPlagiarismModal');
+                    if (modalElement) {
+                        const modal = new bootstrap.Modal(modalElement);
+                        modal.show();
+                    }
+                } else {
+                    this.showChart = true; // 如果有结果则显示图表
+                    this.updateChart();
+                }
+            },
+
+
+            generateGraphData() {
+                const nodes = [];
+                const links = [];
+                const categories = [];
+                const results = this.results;
+                for (let i = 0; i < results.length; i++) {
+                    categories.push({
+                        name: `Category ${i + 1}`
+                    });
+                    const len = results[i].group_info.length
+                    const info = results[i].group_info;
+                    for (let j = 0; j < len; j++) {
+                        nodes.push({
+                            name: info[j].file_name,
+                            symbolSize: len * 4,
+                            category: i,
+                            content: info[j].file_content,
+                            degree: len,
+                        });
+                    }
+                    for (let j = 0; j < len; j++) {
+                        for( let m = 0; m < this.matrix.length; m++) {
+                            if(this.matrix[m][0].file1_name === info[j].file_name) {
+                                const diffs = this.matrix[m];
+                                 for (let k = j + 1; k < len; k++) {
+                                    for(let n = 0; n < diffs.length; n++) {
+                                        if( diffs[n].file2_name == info[k].file_name ) {
+                                            links.push ({
+                                                source: info[j].file_name,
+                                                target: info[k].file_name,
+                                                value: diffs[n].similarity_ratio
+                                            });
+                                        }
+                                    }
+                                }
+                                break;
+                            }
+                        }
+
+
+                    }
+                }
+                return { nodes, links, categories };
+            },
+
+            updateChart() {
+                if (!this.showChart) return; // 如果不需要显示图表，则退出
+                const chartContainer = document.getElementById('chart1');
+                if (chartContainer) {
+                    var myChart = echarts.init(chartContainer);
+                    var colors = ["#ac9f8a", "#4f794a", "#f091a0", "#5da39d", "#2e59a7", "#a4abd6", "#ecd452", "#ea5514", "#ab1d22", "#d4e5ef",
+                                  "#99806c", "#45465e", "#b1543b", "#da886a", "#b3342a", "#4aa595", "#e0a996", "#1facb0", "#cc1f42", "e58084",]
+                    const { graphData } = this;
+
+                    const option = {
+                        title: {
+                            top: 'top',
+                            left: 'left'
+                        },
+                        tooltip: {},
+                        legend: [
+                            {
+                                data: graphData.categories.map(a => a.name)
+                            }
+                        ],
+                        animationDuration: 1500,
+                        animationEasingUpdate: 'quinticInOut',
+                        series: [
+                            {
+                                name: '分组检测',
+                                type: 'graph',
+                                layout: 'force',
+                                data: graphData.nodes,
+                                links: graphData.links,
+                                categories: graphData.categories.map((category, index) => ({
+                                    ...category,
+                                    itemStyle: {
+                                    color: colors[Math.floor(Math.random() * colors.length)]
+                                    }
+                                })),
+                                roam: true,
+                                draggable: true,
+                                label: {
+                                    show: true,
+                                    position: 'right',
+                                    formatter: '{b}'
+                                },
+                                lineStyle: {
+                                    color: 'source',
+                                    curveness: 0.2
+                                },
+                                emphasis: {
+                                    focus: 'adjacency',
+                                    lineStyle: {
+                                        width: 8
+                                    }
+                                },
+                                force: {
+                                    repulsion: 200,
+                                    edgeLength: 150,
+                                }
+                            }
+                        ]
+                    };
+
+                    myChart.setOption(option);
+
+                    // Event listener for edge clicks
+                    myChart.on('click', (params) => {
+                        if (params.componentType === 'series' && params.seriesType === 'graph' && params.dataType === 'edge') {
+                            const { data } = params;
+                            const sourceNode = graphData.nodes.find(node => node.name === data.source);
+                            const targetNode = graphData.nodes.find(node => node.name === data.target);
+                            if (sourceNode && targetNode) {
+                                this.modalSourceCode = sourceNode.content;
+                                this.modalTargetCode = targetNode.content;
+                                this.showModal = true;
+                                // Trigger modal display manually
+                                const modalElement = document.getElementById('codeModal');
+                                if (modalElement) {
+                                    const modal = new bootstrap.Modal(modalElement);
+                                    modal.show();
+                                }
+                            }
+                        } else if (params.componentType === 'series' && params.seriesType === 'graph' && params.dataType === 'node') {
+                            const { data } = params;
+                            const node = this.graphData.nodes.find(node => node.name === data.name);
+                            if (node) {
+                                const blob = new Blob([node.content], { type: 'text/plain;charset=utf-8' });
+                                saveAs(blob, `${data.name}`);
+                            }
+                        }
+                    });
+                } else {
+                    console.error("Chart container not found!");
+                }
+            },
+
+            closeModal() {
+                this.showModal = false;
+                const modalElement = document.getElementById('codeModal');
+                if (modalElement) {
+                    const modal = bootstrap.Modal.getInstance(modalElement);
+                    if (modal) modal.hide();
+                }
+            },
+
+            handleBackdropClick(event) {
+                if (event.target.classList.contains('modal-backdrop')) {
+                    this.closeModal();
+                }
+            },
+            submitInputValue() {
+                if (this.inputValue.trim() !== '') {
+                    const value = parseFloat(this.inputValue);
+                    console.log(value);
+                    if(!isNaN(value) && value >= 0 && value <= 100) {
+                        this.submittedValue = `Threshold: ${value}%`;
+                        this.inputValue = ''; // 清空输入框的内容
+                        this.threshold = value / 100;
+
+                    } else {
+                        this.submittedValue = 'Shreshold: ERR';
+                        this.inputValue = ''; // 清空输入框的内容
+                    }
+                }
+            },
+        },
+
+        mounted() {
+            Prism.highlightAll();
+            document.addEventListener('click', this.handleBackdropClick);
+        },
+        beforeUnmount() {
+            document.removeEventListener('click', this.handleBackdropClick);
+        },
+        watch:{
+            checkOption(newValue, oldValue) {
+                if(newValue !== oldValue) {
+                    this.resendFilesAndUpdateResults();
+                }
+            }
+        },
+        computed: {
+            showExportButton() {
+                return this.results.length > 0;
+            }
+        },
+        template: `
+            <div class="d-flex flex-row" style="margin-left: clamp(200px, 20vw, 20vw); padding: 15px;">
+                <side-bar :now="now"></side-bar>
+                <div style="flex-grow: 1; display: flex; flex-direction: column; padding: 20px;">
+                    <div class="navbar d-flex justify-content-between align-items-center">
+                        <h1 style="margin-bottom: 0;">分组查询</h1>
+                        <div class="d-flex align-items-center">
+                            <form>
+                            <div class="input-group me-2" style="width: auto;">
+                                        <input
+                                            type="text"
+                                            v-model="inputValue"
+                                            class="form-control"
+                                            :placeholder="submittedValue || 'ERROR'"
+                                            style="width: 150px;"
+                                        />
+                                        <button
+                                            type="button"
+                                            class="btn btn-primary"
+                                            @click="submitInputValue"
+                                            style="background-color: #68b3bd; border: 1px solid #68b3bd;"
+                                        >提交</button>
+                            </div>
+                            </form>
+                            <select class="form-select me-2" v-model="checkOption" style="display: inline-block; width: auto;">
+                                    <option value="normal">Normal</option>
+                                    <option value="ast">AST</option>
+                            </select>
+                            <button type="button" style="background-color: #d1b58d; border: 1px solid #d1b58d" class="btn btn-dark" onclick="document.getElementById('fileInput').click();">上传文件</button>
+                            <input type="file" id="fileInput" accept=".txt,.py,.js,.html,.css" multiple hidden ref="fileInput" @change="handleFileChange">
+
+                        </div>
+                    </div>
+                    <hr>
+
+
+
+                    <div id="chart1" style="width: 100%; height: 560px; margin-top: 20px; overflow-y: auto;"></div>
+                </div>
+            </div>
+
+
+
+            <!-- Code Display Modal -->
+            <div class="modal fade" id="codeModal" tabindex="-1" aria-labelledby="codeModalLabel" aria-hidden="true">
+                <div class="modal-dialog modal-lg">
+                    <div class="modal-content">
+                        <div class="modal-header">
+                            <h5 class="modal-title" id="codeModalLabel">代码展示</h5>
+                            <button type="button" class="btn-close" aria-label="Close" @click="closeModal"></button>
+                        </div>
+                        <div class="modal-body">
+                            <div class="row">
+                                <div class="col">
+                                    <h6>Source Code</h6>
+                                    <pre><code class="language-python" v-highlight v-html="modalSourceCode"></code></pre>
+                                </div>
+                                <div class="col">
+                                    <h6>Target Code</h6>
+                                    <pre><code class="language-python" v-highlight v-html="modalTargetCode"></code></pre>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- No Plagiarism Modal -->
+            <div class="modal fade" id="noPlagiarismModal" tabindex="-1" aria-labelledby="noPlagiarismModalLabel" aria-hidden="true">
+                <div class="modal-dialog modal-sm">
+                    <div class="modal-content">
+                        <div class="modal-header">
+                            <h5 class="modal-title" id="noPlagiarismModalLabel">结果</h5>
+                            <button type="button" class="btn-close" aria-label="Close" @click="closeModal"></button>
+                        </div>
+                        <div class="modal-body text-center">
+                            无抄袭行为
+                        </div>
+                    </div>
+                </div>
+            </div>
+        `,
+    });
+
+    app.mount("#app");
+</script>
+
+</body>
+</html>

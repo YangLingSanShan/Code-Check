@@ -1,0 +1,34 @@
+# Visual Studio Code
+.vscode/*
+!.vscode/settings.json
+!.vscode/tasks.json
+!.vscode/launch.json
+!.vscode/extensions.json
+.history
+
+.idea/*
+
+# Environments
+.env
+.venv
+env/
+venv/
+ENV/
+env.bak/
+venv.bak/
+
+# Django
+*.log
+*.pot
+*.pyc
+__pycache__
+db.sqlite3
+media/
+/diff.txt
+/output1.dif
+/output2.dif
+/diff.txt
+/code_comparison/migrations/0002_codecomparisonhistory_diff_content.py
+!media/avatars/default.jpg
+/code_comparison/migrations/
+/CodeCheck/migrations/

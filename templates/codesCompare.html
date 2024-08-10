@@ -1,0 +1,649 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>代码重复检测</title>
+    <script type="importmap">
+        {
+            "imports": {
+                "vue": "https://unpkg.com/vue@3.4.29/dist/vue.esm-browser.js",
+                "axios": "https://cdn.jsdelivr.net/npm/axios@1.1.2/dist/axios.min.js"
+            }
+        }
+    </script>
+    <link href="https://cdn.bootcdn.net/ajax/libs/twitter-bootstrap/5.2.3/css/bootstrap.min.css" rel="stylesheet">
+    <script src="https://cdn.bootcdn.net/ajax/libs/twitter-bootstrap/5.2.3/js/bootstrap.bundle.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/jquery@3.6.3/dist/jquery.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/axios/dist/axios.min.js"></script>
+    <script src="../static/js/echarts.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.0/jszip.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/FileSaver.js/2.0.5/FileSaver.min.js"></script>
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/prism/1.25.0/themes/prism-okaidia.min.css" rel="stylesheet">
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.25.0/prism.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.25.0/components/prism-python.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.25.0/components/prism-javascript.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.25.0/components/prism-markup.min.js"></script>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css">
+    <style>
+        #chart-container {
+            width: 100%;
+            height: 600px;
+            overflow-y: auto;
+            border: 1px solid #ddd;
+        }
+        .echarts-container {
+            height: 100%;
+        }
+        .modal-backdrop {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background-color: rgba(0, 0, 0, 0.5);
+            z-index: 1040;
+        }
+        .modal-dialog {
+            max-width: 90%;
+            max-height: 90%;
+        }
+        .modal-content {
+            border-radius: 0.5rem;
+        }
+
+        .tooltip {
+          position: fixed;
+          top: 45%;
+          left: 50%;
+          transform: translate(-50%, -50%);
+          background-color: #274374;
+          color: #fff;
+          padding: 10px 20px;
+          border-radius: 5px;
+          opacity: 1;
+          transition: opacity 1s ease-in-out;
+          z-index: 1000;
+          text-align: center;
+        }
+
+        .tooltip.fade-out {
+          opacity: 0;
+        }
+
+        .custom-font {
+          font-family: 'Arial', sans-serif; /* Font family */
+          font-size: 20px; /* Font size */
+          font-weight: bold; /* Font weight */
+          color: #4d473d; /* Text color */
+          line-height: 1.5; /* Line height */
+          margin-bottom: 10px; /* Margin at the bottom */
+        }
+
+        .diff-container {
+          max-height: 400px;
+          overflow-y: auto;
+          overflow-x: auto;
+          white-space: pre-wrap;
+          font-family: monospace;
+        }
+        .diff-line {
+            font-family: SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+            margin: 0;
+            padding: 0;
+            line-height: 1.4; /* Adjust line-height for tighter spacing */
+        }
+
+        .added-line {
+            background-color: #e6ffed; /* Light green */
+        }
+
+        .removed-line {
+            background-color: #ffeef0; /* Light pink */
+        }
+
+        .unchanged-line {
+            background-color: #eaeaea; /* No background for unchanged lines */
+        }
+    </style>
+</head>
+<body>
+<div id="app" class="container-fluid"></div>
+
+<script type="module">
+    import { createApp } from 'vue';
+    import sideBar from "../static/js/sideBar.js";
+
+    const highlightDirective = {
+        mounted(el) {
+            Prism.highlightElement(el);
+        },
+        updated(el) {
+            Prism.highlightElement(el);
+        }
+    };
+
+    const app = createApp({
+        components: {
+            sideBar
+        },
+        directives: {
+            highlight: highlightDirective
+        },
+        data() {
+            return {
+                inputValue: '',
+                now: "代码重复检测",
+                uploadedFiles: [],
+                selectedFileIndex: null,
+                showModal: false,
+                checkOption: 'normal',
+                results_similarity: [],
+                results_name: [],
+                results_diffs: [],
+                results_id: [],
+                plagiarizedFiles: [],
+                postFormData: new FormData(),
+                isPostStd: false,
+                isPostEls: false,
+                elsUpLoadedFiles: [],
+                stdUpLoadedFile: [],
+                stdFileContent: "",
+                fileContents: [],
+                stdFileName: "",
+                showTooltip: false,
+                showText: "",
+                classification: "NONE",
+            };
+        },
+        methods: {
+            getLineClass(line) {
+                  if (line.startsWith("+")) {
+                    return "added-line";
+                  } else if (line.startsWith("-")) {
+                    return "removed-line";
+                  }
+                  return "unchanged-line";
+            },
+            handleSubmit() {
+                const chartContainer = document.getElementById('chart1');
+                if(chartContainer) {
+                        var myChart = echarts.getInstanceByDom(chartContainer);
+                        if (myChart) {
+                            myChart.clear(); // 清除图表内容
+                        }
+                }
+                if(this.isPostEls && this.isPostStd) {
+                    if(this.inputValue) {
+                        this.classification = this.inputValue;
+                    }
+                    this.postFormData.append('classification', this.classification);
+                    axios.post('/api/comparison/', this.postFormData)
+                            .then(response => {
+                                // 更新结果数据
+                                this.results_similarity = response.data.results.map(result => result.similarity_ratio);
+                                this.results_name = response.data.results.map(result => result.file_name);
+                                this.results_diffs = response.data.results.map(result => result.diff_content);
+                                this.results_id = response.data.results.map(result => result.id);
+                                this.plagiarizedFiles = [];
+                                this.readStdFileContent();
+                                this.readElsFileContents();
+                                const newFormData = new FormData();
+                                for (const [key, value] of this.postFormData.entries()) {
+                                    // 只保留不包含 "files" 键的条目
+                                    if (key !== 'files') {
+                                        newFormData.append(key, value);
+                                    }
+                                }
+                                this.postFormData = newFormData;
+                                this.isPostEls = false;
+
+                                this.updateChart();
+
+                            })
+                            .catch(error => {
+                                console.error('Error uploading files:', error);
+                    });
+                } else {
+                    this.showTooltip = true;
+                    console.log(this.isPostStd);
+                    console.log(this.isPostEls);
+                    if(!this.isPostStd && !this.isPostEls) {
+                        this.showText = "请先上传文件";
+                    } else if (!this.isPostStd) {
+                        this.showText = "请上传标准文件";
+                    } else {
+                        this.showText = "请上传其他文件";
+                    }
+                    setTimeout(() => {
+                        this.fadeOutTooltip();
+                    }, 300);
+                }
+            },
+            fadeOutTooltip() {
+              const tooltip = document.getElementById('tooltip');
+              if (tooltip) {
+                  tooltip.classList.add('fade-out');
+                  setTimeout(() => {
+                      this.showTooltip = false;
+                      tooltip.classList.remove('fade-out');
+                  }, 800); // Match this to the CSS transition duration
+                }
+            },
+            handleStdFileChange(event) {
+                const file = event.target.files;
+                if(file.length == 1) {
+                    this.postFormData.delete('stdFile');
+                    this.postFormData.append('stdFile', file[0]);
+                    this.stdUpLoadedFile = Array.from(file);
+                    this.isPostStd = true;
+                    this.stdFileName = file[0].name;
+                } else {
+                    if(this.isPostStd) {
+                        this.isPostStd = false;     //如果想要改变std，但是不小心上传多了，就设置为无效
+                        this.stdFileName = "";
+                    }
+                    this.showTooltip = true;
+                    this.showText = "标准文件上传失败";
+                    setTimeout(() => {
+                        this.fadeOutTooltip();
+                    }, 300);
+                }
+            },
+            handleFileChange(event) {
+
+                if(this.isPostEls) {
+                    console.log("clear");
+                    const newFormData = new FormData();
+                    this.postFormData.forEach((value, key) => {
+                        if (key !== 'files') {
+                            newFormData.append(key, value);
+                        }
+                    });
+                    this.postFormData = newFormData;
+                    this.elsUpLoadedFiles = [];
+                }
+                console.log("1");
+                const files = event.target.files;
+                if (files && files.length > 0) {
+                    for (let i = 0; i < files.length; i++) {
+                        this.postFormData.append('files', files[i]);
+                    }
+                    this.postFormData.append('comparison_type', 'single_to_multiple');
+                    this.postFormData.append('check_option', this.checkOption);
+
+                    this.elsUpLoadedFiles = Array.from(files);
+                    this.isPostEls = true;
+                    event.target.value = "";
+                }
+            },
+            resendFilesAndUpdateResults() {
+                if(this.isPostEls) {
+                    this.postFormData.append('check_option', this.checkOption);
+                    return;
+                }
+                if (this.elsUpLoadedFiles.length > 0) {
+                    this.elsUpLoadedFiles.forEach(file => {
+                        this.postFormData.append('files', file);
+                    });
+                    this.postFormData.append('comparison_type', 'single_to_multiple');
+                    this.postFormData.append('check_option', this.checkOption); // 使用当前的 checkOption
+                    axios.post('/api/comparison/', this.postFormData)
+                        .then(response => {
+                                this.results_similarity = response.data.results.map(result => result.similarity_ratio);
+                                this.results_name = response.data.results.map(result => result.file_name);
+                                this.results_diffs = response.data.results.map(result => result.diff_content);
+                                this.results_id = response.data.results.map(result => result.id);
+                                this.plagiarizedFiles = [];
+                                this.readStdFileContent();
+                                this.readElsFileContents();
+
+                                const newFormData = new FormData();
+                                for (const [key, value] of this.postFormData.entries()) {
+                                    // 只保留不包含 "files" 键的条目
+                                    if (key !== 'files') {
+                                        newFormData.append(key, value);
+                                    }
+                                }
+                                this.postFormData = newFormData;
+                                this.isPostEls = false;
+
+                                this.updateChart();
+
+                        })
+                        .catch(error => {
+                            console.error('Error uploading files:', error);
+                        });
+                }
+            },
+            readStdFileContent() {
+                this.stdFileContent = "";
+                const file = this.stdUpLoadedFile[0]; // 假设 uploadedFiles 中第一个文件是标准文件
+                if (file) {
+                    const reader = new FileReader();
+                    reader.onload = (event) => {
+                        this.stdFileContent = event.target.result;
+                    };
+                    reader.readAsText(file); // 传递文件对象给 readAsText 方法
+                } else {
+                    console.error('没有找到标准文件。');
+                }
+            },
+            readElsFileContents() {
+                const order = this.results_name;
+                this.fileContents = [];
+                order.forEach((fileName, index) => {
+                    for(let i = 0; i < this.elsUpLoadedFiles.length; i++) {
+                        const thisName = this.elsUpLoadedFiles[i].name;
+                        if(thisName === fileName) {
+                            const reader = new FileReader();
+                            reader.onload = (event) => {
+                                this.fileContents.push(event.target.result);
+                            };
+                            reader.readAsText(this.elsUpLoadedFiles[i])
+                            break;
+                        }
+                    }
+                });
+            },
+
+            downloadFile(fileIndex) {
+                const file = this.elsUpLoadedFiles[fileIndex];
+                const blob = new Blob([this.fileContents[fileIndex]], { type: "text/plain" });
+                const url = window.URL.createObjectURL(blob);
+                const a = document.createElement("a");
+                a.style.display = "none";
+                a.href = url;
+                a.download = file.name;
+                document.body.appendChild(a);
+                a.click();
+                window.URL.revokeObjectURL(url);
+                document.body.removeChild(a);
+            },
+            downloadStdFile() {
+                const file = this.stdUpLoadedFile[0];
+                const blob = new Blob([this.stdFileContent], { type: "text/plain" });
+                const url = window.URL.createObjectURL(blob);
+                const a = document.createElement("a");
+                a.style.display = "none";
+                a.href = url;
+                a.download = file.name;
+                document.body.appendChild(a);
+                a.click();
+                window.URL.revokeObjectURL(url);
+                document.body.removeChild(a);
+            },
+            markAsPlagiarized(fileIndex) {
+                if (!this.plagiarizedFiles.includes(fileIndex)) {
+                    this.plagiarizedFiles.push(fileIndex);
+                    const formData = new FormData();
+                    formData.append('name', this.results_name[fileIndex - 1]);
+                    formData.append('id', this.results_id[fileIndex - 1]);
+                    formData.append('mark', 'true');
+                    let csrftoken = document.getElementsByName('csrfmiddlewaretoken')[0].value;
+                    axios.defaults.headers.common['X-CSRFToken'] = csrftoken;
+                    axios.post('/api/mark_plagiarism/', formData, {
+                        headers: {
+                            'X-CSRFToken': csrftoken
+                        }
+                    });
+                }
+                this.updateChart();
+            },
+            markAsNotPlagiarized(fileIndex) {
+                if (this.plagiarizedFiles.includes(fileIndex)) {
+                    this.plagiarizedFiles = this.plagiarizedFiles.filter(index => index !== fileIndex);
+                    const formData = new FormData();
+                    formData.append('id', this.results_id[fileIndex - 1]);
+                    formData.append('mark', 'false');
+                    let csrftoken = document.getElementsByName('csrfmiddlewaretoken')[0].value;
+                    axios.defaults.headers.common['X-CSRFToken'] = csrftoken;
+                    axios.post('/api/mark_plagiarism/', formData, {
+                        headers: {
+                            'X-CSRFToken': csrftoken
+                        }
+                    });
+                }
+                this.updateChart();
+            },
+            exportPlagiarizedFiles() {
+                const zip = new JSZip();
+                this.plagiarizedFiles.forEach(index => {
+                    zip.file(this.results_name[index - 1], this.fileContents[index]);
+                });
+                zip.generateAsync({ type: 'blob' }).then(content => {
+                    saveAs(content, 'plagiarized_files.zip');
+                });
+            },
+            updateChart() {
+                var fileNames = Array.from(this.results_name);
+                var firstFileName = this.stdUpLoadedFile[0].name;
+                var similarity = Array.from(this.results_similarity);
+
+                // 计算图表容器的高度
+                var containerHeight = Math.max(330, fileNames.length * 50); // Adjust height per file item
+
+                // 更新图表容器的高度
+                document.getElementById('chart1').style.height = containerHeight + 'px';
+
+                const myChart = echarts.init(document.getElementById('chart1'));
+
+                var colors = ["#19325f","#06436f","#003d74","#2e59a7","#106898","#4994c4","#88abda","#4994c4","#aed0ee","#bcd4e7",
+                              "#d4e5ef","#a3bbdb","#8ba3c7","#5976ba"];
+
+
+                var option = {
+                    tooltip: {},
+                    yAxis: {
+                        data: fileNames,
+                        axisLabel: {
+                            margin: 10,
+                            fontSize: 15
+                        }
+                    },
+                    xAxis: {
+                        type: 'value',
+                        min: 0, // 固定 x 轴的最小值为 0
+                        max: 1, // 固定 x 轴的最大值为 1
+                        axisLabel: {
+                            formatter: '{value}',
+                        },
+                        axisLine: {
+                            onZero: false,
+                        },
+                    },
+                    grid: {
+                        top: 50,
+                        bottom: 100,
+                        left: 160,
+                        right: 50
+                    },
+                    series: [{
+                        name: 'Percentage',
+                        type: 'bar',
+                        data: similarity,
+                        barWidth: 30,
+                        barCategoryGap: '20%',
+                        barGap: '10%',
+                        itemStyle: {
+                            normal: {
+                                color: function(params) {
+                                    return colors[(params.dataIndex + 1) % colors.length];
+                                }
+                            }
+                        },
+                        label: {
+                            show: true,
+                            position: 'right',
+                            formatter: function(params) {
+                                return this.plagiarizedFiles.includes(params.dataIndex + 1) ? '✗' : '✓';
+                            }.bind(this),
+                            textStyle: {
+                                fontSize: 22,
+                                color: function(params) {
+                                    return this.plagiarizedFiles.includes(params.dataIndex + 1) ? '✗' : '✓';
+                                }.bind(this),
+                            }
+                        },
+                    }],
+                };
+
+                myChart.setOption(option);
+
+                myChart.on('click', (params) => {
+                    this.selectedFileIndex = params.dataIndex + 1;
+                    this.showModal = true;
+                });
+                myChart.resize(); // Ensure chart resizes properly
+            },
+
+            closeModal() {
+                this.showModal = false;
+            },
+
+            handleBackdropClick(event) {
+                // Ensure click events on the backdrop are processed correctly
+                if (event.target.classList.contains('modal-backdrop')) {
+                    this.closeModal();
+                } else if (event.target.classList.contains('modal')) {
+                    this.closeModal();
+                }
+            }
+        },
+        mounted() {
+            Prism.highlightAll();
+
+            // Add event listener for backdrop click
+            document.addEventListener('click', this.handleBackdropClick);
+        },
+        beforeUnmount() {
+            // Remove event listener for backdrop click
+            document.removeEventListener('click', this.handleBackdropClick);
+        },
+        watch: {
+            checkOption(newValue,oldValue) {
+                if(newValue !== oldValue) {
+                    this.resendFilesAndUpdateResults();
+                }
+            }
+        },
+        computed: {
+            showExportButton() {
+                return this.plagiarizedFiles.length > 0;
+            },
+            parsedDiff() {
+              if (this.selectedFileIndex === null) {
+                    return [];
+              }
+              const diffString = this.results_diffs[this.selectedFileIndex - 1];
+              const raw_strs = diffString.split("\n");
+              const res = [];
+              for(let i = 0; i < raw_strs.length; i++) {
+                    if(raw_strs[i] !== "") {
+                        res.push(raw_strs[i]);
+                    }
+              }
+              return res;
+            },
+        },
+        template: `
+            <div class="d-flex flex-row" style="margin-left: clamp(200px, 20vw, 20vw); padding: 15px;">
+                <!-- 左侧 sidebar -->
+                <side-bar :now="now"></side-bar>
+
+                <!-- 右侧内容 -->
+                <div style="flex-grow: 1; display: flex; flex-direction: column; padding: 20px;">
+                    <div class="navbar d-flex justify-content-between align-items-center">
+                        <h1 style="margin-bottom: 0;">代码重复检测</h1>
+                        <div>
+                            <select class="form-select me-2" v-model="checkOption" style="display: inline-block; width: auto;">
+                                    <option value="normal">Normal</option>
+                                    <option value="ast">AST</option>
+                            </select>
+                            <button type="button" style="background-color: #ffb07c; border: 1px solid #ffb07c;" class="btn btn-secondary" onclick="document.getElementById('stdfileInput').click();">上传标准文件</button>
+                            <input type="file" id="stdfileInput" accept=".txt,.py,.js,.html,.css" multiple hidden ref="stdfileInput" @change="handleStdFileChange">
+                            <button type="button" style="background-color: #b4abaf; border: 1px solid #b4abaf;" class="btn btn-secondary" onclick="document.getElementById('fileInput').click();">上传其余文件</button>
+                            <input type="file" id="fileInput" accept=".txt,.py,.js,.html,.css" multiple hidden ref="fileInput" @change="handleFileChange">
+                        </div>
+
+                        <div class="input-group me-2" style="width: auto;">
+                                    <input
+                                        type="text"
+                                        v-model="inputValue"
+                                        class="form-control"
+                                        :placeholder="'请输入分类名'"
+                                        style="width: 150px;"
+                                    />
+                                    <button
+                                        type="button"
+                                        class="btn btn-primary"
+                                        @click="handleSubmit"
+                                        style="border: 1px solid #8397d0; background-color: #8397d0;"
+                                    >提交</button>
+                        </div>
+                    </div>
+                    <hr>
+
+                    <div v-if="stdFileName">
+                         <p class="custom-font">标准文件: {% verbatim %} {{ stdFileName }} {% endverbatim %}
+                         <button v-if="stdFileName" type="button" style="margin-left: 10px; background-color: #30aecf; border: 1px solid #63bbd0;" class="btn btn-primary" @click="downloadStdFile()">下载标准文件</button>
+                         <button v-if="showExportButton" type="button" style="margin-left: 10px; background-color: #eecc99; border: 1px solid #eecc99;" class="btn btn-primary" @click="exportPlagiarizedFiles">导出被标记为抄袭的文件</button>
+                         </p>
+                    </div>
+
+                    <!-- 图表区域 -->
+                    <div id="chart1" style="width: 100%; height: 560px; margin-top: 20px; overflow-y: auto;"></div>
+                </div>
+            </div>
+
+            <!-- 模态框 -->
+            <div v-if="showModal" class="modal-backdrop" @click="handleBackdropClick">
+                <div class="modal" tabindex="-1" style="display: block;">
+                    <div class="modal-dialog modal-lg">
+                        <div class="modal-content">
+                            <div class="modal-header">
+                                <h5 class="modal-title">{% verbatim %} {{ results_name[selectedFileIndex - 1] }} {% endverbatim %}</h5>
+                                <h5 style="padding-left: 15px; font color="#FF0000"" class="modal-title">{% verbatim %}  Similarity: {{ results_similarity[selectedFileIndex - 1] * 100 }}% {% endverbatim %}</h5>
+                                <span v-if="plagiarizedFiles.includes(selectedFileIndex)" style="color: red; font-size: 0.8em;">（抄袭）</span>
+                                <span v-else style="color: green; font-size: 0.8em;">（非抄袭）</span>
+                                <button type="button" class="btn-close" @click="closeModal" aria-label="Close"></button>
+                            </div>
+                            <div class="modal-body d-flex">
+                                <!-- 左侧显示标准文件 -->
+                                <div style="flex: 4; padding-right: 10px;">
+                                    <h6>标准文件代码</h6>
+                                    <pre class="language-python" style="max-height: 400px; overflow-x: auto; overflow-y: auto; white-space: pre-wrap;" v-highlight v-html="stdFileContent"><code></code></pre>
+                                </div>
+                                <!-- 右侧显示选择的文件 -->
+                                <div style="flex: 6; padding-left: 10px;">
+                                    <h6>选择文件代码</h6>
+                                    <pre class="language-python" style="max-height: 400px; overflow-x: auto; overflow: auto; white-space: pre-wrap;" v-highlight><code v-if="selectedFileIndex !== null">{% verbatim %}{{ fileContents[selectedFileIndex - 1] }}{% endverbatim %}</code></pre>
+                                    <div v-if="selectedFileIndex !== null" class="diff-container">
+                                        <div  v-for="(line, index) in parsedDiff" :key="index" :class="['diff-line', getLineClass(line)]">
+                                            {% verbatim %}
+                                            <span class="line-number">{{ index + 1 }}</span>
+                                            {{line}}
+                                            {% endverbatim %}
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="modal-footer">
+                                {% csrf_token %}
+                                <button type="button" style="background-color: #c8191d; border: 1px solid #b01f24;" class="btn btn-danger" @click="markAsPlagiarized(selectedFileIndex)">标记为抄袭</button>
+                                <button type="button" style="background-color: #53976f; border: 1px solid #007175;" class="btn btn-success" @click="markAsNotPlagiarized(selectedFileIndex)">标记为未抄袭</button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            <div id="tooltip" v-if="showTooltip" class="tooltip">
+                {% verbatim %} {{ showText }} {% endverbatim %}
+            </div>
+        `,
+    });
+
+    app.mount("#app");
+</script>
+
+</body>
+</html>

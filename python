@@ -1,0 +1,4 @@
+Operations to perform:
+  Apply all migrations: admin, auth, code_comparison, contenttypes, sessions, users
+Running migrations:
+  No migrations to apply.

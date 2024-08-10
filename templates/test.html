@@ -1,0 +1,56 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Diff Style Rendering</title>
+    <link rel="stylesheet" href="styles.css">
+    <style>
+        body {
+    font-family: 'Courier New', Courier, monospace;
+    background-color: #f8f8f8;
+    padding: 20px;
+}
+
+.diff {
+    background-color: #fff;
+    border: 1px solid #ddd;
+    border-radius: 5px;
+    padding: 10px;
+    overflow-x: auto;
+}
+
+pre {
+    margin: 0;
+    white-space: pre-wrap;
+}
+
+.line-removed {
+    background-color: #ffeef0;
+    color: #d73a49;
+    display: block;
+    padding: 5px;
+    margin-bottom: 2px;
+    border-left: 2px solid #d73a49;
+}
+
+.line-added {
+    background-color: #e6ffed;
+    color: #22863a;
+    display: block;
+    padding: 5px;
+    margin-bottom: 2px;
+    border-left: 2px solid #28a745;
+}
+
+    </style>
+</head>
+<body>
+    <div class="diff">
+        <pre>
+<span class="line-removed">- 注意：关于某项分数具体的计算方法请参考[公测文档](http://gitlab.oo.buaa.edu.cn/2022_cpp_public/course_system_guidebook/-/blob/master/%E5%85%AC%E6%B5%8B%E6%96%87%E6%A1%A3.md)各项细则，各项分数所占比例目前不予公布</span>
+<span class="line-added">+ 注意：关于某项分数具体的计算方法请参考[公测文档](http://gitlab.oo.buaa.edu.cn/2023_oopre_public/course_system_guidebook/-/blob/main/%E5%85%AC%E6%B5%8B%E6%96%87%E6%A1%A3.md)各项细则，各项分数所占比例目前不予公布</span>
+        </pre>
+    </div>
+</body>
+</html>

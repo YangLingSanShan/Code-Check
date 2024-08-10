@@ -1,0 +1,35 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Submission Details</title>
+    {% load static %}
+    <link rel="stylesheet" href="{% static 'css/submission_details.css' %}">
+    <link href="https://cdn.bootcdn.net/ajax/libs/twitter-bootstrap/5.2.3/css/bootstrap.min.css" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Fira+Code:wght@400;700&display=swap" rel="stylesheet">
+</head>
+<body>
+    <div class="container mt-5" id="submission-container">
+        <div class="text-center mb-4">
+            <h2 class="display-4">详细内容</h2>
+        </div>
+        <div class="card shadow-sm">
+            <div class="card-header bg-primary text-white d-flex justify-content-between align-items-center">
+                <span class="file-name">{{ file1_name }}</span>
+                <span class="vs-separator">VS</span>
+                <span class="file-name">{{ file2_name }}</span>
+            </div>
+            <div class="card-body">
+                <p><strong>比较时间:</strong> {{ created_at }}</p>
+                <p><strong>相似度:</strong> {{ similarity_ratio_percent }}%</p>
+                <p><strong>查重方式:</strong> {{ check_type }}</p>
+                <h4>差异内容</h4>
+                <div class="diff-content bg-light p-3 rounded border">{{ diff_content|safe }}</div>
+            </div>
+        </div>
+        <div class="text-center mt-4 mb-5">
+            <a href="{% url 'history' %}" class="btn btn-primary">返回上一页</a>
+        </div>
+    </div>
+</body>
+</html>
